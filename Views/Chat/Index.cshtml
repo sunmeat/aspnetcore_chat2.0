@@ -1,0 +1,175 @@
+﻿@{
+    ViewData["Title"] = "Чат на SignalR";
+}
+<h1 class="text-center my-4">
+    Вітаємо, <span id="currentUser">завантаження...</span>!
+    <button id="logoutButton" class="btn btn-outline-danger btn-sm ms-3">Вийти</button>
+</h1>
+
+<div class="container">
+    <div class="row">
+        <!-- основний чат -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-body">
+                    <ul id="messagesList" class="list-unstyled" style="height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background: #f8f9fa;">
+                    </ul>
+                </div>
+            </div>
+            <div class="input-group mt-3">
+                <input type="text" id="messageInput" class="form-control" placeholder="Введіть повідомлення..." />
+                <button id="sendButton" class="btn btn-primary">Надіслати</button>
+            </div>
+        </div>
+        <!-- список онлайн користувачів справа зверху -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <strong>Онлайн користувачі (<span id="onlineCount">0</span>)</strong>
+                </div>
+                <div class="card-body">
+                    <ul id="onlineUsersList" class="list-unstyled"></ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        // динамічне завантаження SignalR бібліотеки
+        function loadScript(src, callback) {
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = callback;
+            script.onerror = () => console.error(`Не вдалося завантажити: ${src}`);
+            document.head.appendChild(script);
+        }
+
+        loadScript('https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/9.0.6/signalr.min.js', function () {
+            if (typeof signalR === 'undefined') {
+                alert("Не вдалося завантажити SignalR. Перевірте інтернет.");
+                return;
+            }
+
+            const urlParams = new URLSearchParams(window.location.search);
+            let userName = urlParams.get('user');
+            if (!userName || userName.trim() === '') {
+                window.location.href = "/Chat/Login";
+                return;
+            }
+            userName = decodeURIComponent(userName).trim();
+            if (userName === '') userName = "Анонім";
+            document.getElementById("currentUser").textContent = userName;
+
+            const connection = new signalR.HubConnectionBuilder() // створення підключення до хаба
+                .withUrl("/chatHub" + window.location.search)
+                .withAutomaticReconnect()
+                .configureLogging(signalR.LogLevel.Information)
+                .build();
+
+            // завантаження історії та обробка подій
+            connection.on("LoadHistory", function (history) {
+                const messagesList = document.getElementById("messagesList");
+                messagesList.innerHTML = "";
+                if (history.length === 0) {
+                    messagesList.innerHTML = "<li class='text-muted mb-2'><em>Історія порожня. Почніть спілкування!</em></li>";
+                } else {
+                    history.forEach(msg => {
+                        const li = document.createElement("li");
+                        li.classList.add("mb-2");
+                        li.innerHTML = `<small class="text-muted">[${msg.Timestamp}]</small> <strong>${msg.User}:</strong> ${msg.Message}`;
+                        messagesList.appendChild(li);
+                    });
+                }
+                messagesList.scrollTop = messagesList.scrollHeight;
+            });
+
+            // обробка отримання нового повідомлення
+            connection.on("ReceiveMessage", function (user, message, timestamp) {
+                const li = document.createElement("li");
+                li.classList.add("mb-2");
+                li.innerHTML = `<small class="text-muted">[${timestamp}]</small> <strong>${user}:</strong> ${message}`;
+                document.getElementById("messagesList").appendChild(li);
+                document.getElementById("messagesList").scrollTop = document.getElementById("messagesList").scrollHeight;
+            });
+
+            // обробка підключення/відключення користувачів
+            connection.on("UserConnected", function (user) {
+                addSystemMessage(`${user} увійшов у чат`);
+            });
+
+            connection.on("UserDisconnected", function (user) {
+                addSystemMessage(`${user} вийшов з чату`);
+            });
+
+            // оновлення списку онлайн користувачів
+            connection.on("UpdateOnlineUsers", function (users) {
+                const list = document.getElementById("onlineUsersList");
+                const count = document.getElementById("onlineCount");
+                list.innerHTML = "";
+                users.forEach(u => {
+                    const li = document.createElement("li");
+                    li.textContent = u;
+                    li.classList.add("mb-1");
+                    list.appendChild(li);
+                });
+                count.textContent = users.length;
+            });
+
+            // допоміжна функція для додавання системних повідомлень, наприклад, про підключення/відключення, неможливість відправки тощо
+            function addSystemMessage(text) {
+                const li = document.createElement("li");
+                li.classList.add("mb-2", "text-muted");
+                li.innerHTML = `<em>${text}</em>`;
+                document.getElementById("messagesList").appendChild(li);
+                messagesList.scrollTop = messagesList.scrollHeight;
+            }
+
+            // підключення до хаба
+            connection.start().then(() => {
+                connection.invoke("Connect", userName); // повідомляємо серверу про підключення
+            }).catch(err => {
+                console.error("Помилка підключення:", err);
+                alert("Не вдалося підключитися до чату.");
+            });
+
+            // відправка повідомлення
+            function sendMessage() {
+                const message = document.getElementById("messageInput").value.trim();
+                if (message) {
+                    connection.invoke("SendMessage", userName, message) // відправляємо повідомлення на сервер
+                        .then(() => {
+                            document.getElementById("messageInput").value = "";
+                        })
+                        .catch(err => {
+                            console.error("Помилка відправки:", err);
+                            addSystemMessage("Помилка: повідомлення не відправлено");
+                        });
+                }
+            }
+
+            document.getElementById("sendButton").addEventListener("click", sendMessage);
+            document.getElementById("messageInput").addEventListener("keypress", e => {
+                if (e.key === "Enter") {
+                    sendMessage();
+                }
+            });
+
+            // кнопка виходу з чату
+            document.getElementById("logoutButton").addEventListener("click", async function () {
+                if (confirm("Ви дійсно хочете вийти з чату?")) {
+                    try {
+                        // коректно відключаємося від SignalR (викликається OnDisconnectedAsync на сервері)
+                        await connection.stop();
+                    } catch (err) {
+                        console.warn("Помилка при відключенні:", err);
+                    } finally {
+                        // переходимо на сторінку входу
+                        window.location.href = "/Chat/Login";
+                    }
+                }
+            });
+        });
+    </script>
+}

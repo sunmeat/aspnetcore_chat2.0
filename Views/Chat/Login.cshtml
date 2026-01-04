@@ -1,0 +1,39 @@
+﻿@{
+    ViewData["Title"] = "Вхід у чат";
+}
+
+<div class="container mt-5">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white text-center">
+                    <h3>Ласкаво просимо до чату!</h3>
+                </div>
+                <div class="card-body">
+                    <form id="loginForm">
+                        <div class="mb-3">
+                            <label for="userInput" class="form-label">Введіть ваше ім'я</label>
+                            <input type="text" id="userInput" class="form-control" placeholder="Ваше ім'я" required />
+                        </div>
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary btn-lg">Увійти в чат</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.getElementById("loginForm").addEventListener("submit", function (e) {
+        e.preventDefault();
+        let user = document.getElementById("userInput").value.trim();
+        if (!user) user = "Анонім";
+
+        const encodedUser = encodeURIComponent(user); // виконує URL-кодування, перетворюючи спеціальні символи (наприклад, пробіли, українські літери, &, = тощо) на безпечні escape-послідовності виду %XX, щоб це значення можна було коректно використовувати як параметр у запиті URL без ризику його неправильної інтерпретації
+
+        // перенаправляємо в чат з параметром ?user=...
+        window.location.href = `/Chat/Index?user=${encodedUser}`;
+    });
+</script>
